@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { User, Bell, PenTool, Search, LogOut, Settings, Home } from "lucide-react"
+import { User, Bell, PenTool, Search, LogOut, Settings, Home, Radio } from "lucide-react"
 import { MOCK_POSTS, CURRENT_USER, MOCK_NOTIFICATIONS, MOCK_USERS } from "@/constants"
 import { type Post, AppView, type User as UserType } from "@/types"
 import { ComposeFlow } from "@/components/ComposeFlow"
@@ -18,10 +18,15 @@ import { FeedView } from "@/components/FeedView"
 import { SidebarLink } from "@/components/SidebarLink"
 import { AiChatModal } from "@/components/AiChatModal"
 import { ContextProfileModal } from "@/components/ContextProfileModal"
+import { OnboardingFlow } from "@/components/OnBoardingFlow"
+import { SpaceCreationModal } from "@/components/SpaceCreationModal"
+import { ActiveSpaceView } from "@/components/ActiveSpaceView"
+import { SpaceMinPlayer } from "@/components/SpaceMinPlayer"
 
 export default function AppPage() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
-
+  // Onboarding State
+  const [isOnboarding, setIsOnboarding] = useState(false);
   // Theme State
   const [theme, setTheme] = useState<"light" | "dark">("dark")
 
@@ -54,6 +59,36 @@ export default function AppPage() {
   const [isDisplayModalOpen, setIsDisplayModalOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
 
+    // --- Spaces State ---
+  const [isSpaceCreationOpen, setIsSpaceCreationOpen] = useState(false);
+  const [currentSpace, setCurrentSpace] = useState<Space | null>(null);
+  const [isSpaceMinimized, setIsSpaceMinimized] = useState(false);
+
+  const handleLogin = () => {
+    setIsLoggedIn(true)
+    // Start Onboarding after login
+    setIsOnboarding(true)
+  }
+
+  const handleOnboardingComplete = (updatedUser: UserType, initialFollowing: Set<string>) => {
+    setCurrentUser((prev) => ({
+      ...updatedUser,
+      stats: {
+        ...prev.stats!,
+        following: initialFollowing.size,
+      },
+    }))
+    
+    // Merge initial following set with new choices, or just set it
+    // For this flow, we'll respect the onboarding choices primarily
+    const mergedFollowing = new Set([...followingSet, ...initialFollowing])
+    setFollowingSet(mergedFollowing)
+    
+    setIsOnboarding(false)
+    window.scrollTo({ top: 0, behavior: "smooth" })
+  }
+
+  
   const handlePublish = (newPost: Post) => {
     setPosts([newPost, ...posts])
     setIsComposeOpen(false)
@@ -115,6 +150,34 @@ export default function AppPage() {
   const openInteraction = (post: Post, mode: "comment" | "askAi" | "context" = "comment") => {
     setInteraction({ post, mode })
   }
+  // --- Spaces Logic ---
+  const handleStartSpace = (title: string, tags: string[]) => {
+      // Create Mock Participants
+      const participants: SpaceParticipant[] = [
+          { user: currentUser, role: 'host', isMuted: false, isSpeaking: true },
+          ...MOCK_USERS.slice(0, 2).map(u => ({ user: u, role: 'speaker', isMuted: true, isSpeaking: false } as SpaceParticipant)),
+          ...MOCK_USERS.slice(2).map(u => ({ user: u, role: 'listener', isMuted: true, isSpeaking: false } as SpaceParticipant))
+      ];
+
+      const newSpace: Space = {
+          id: Date.now().toString(),
+          title,
+          tags,
+          hostId: currentUser.handle,
+          participants,
+          isActive: true,
+          startedAt: Date.now()
+      };
+
+      setCurrentSpace(newSpace);
+      setIsSpaceCreationOpen(false);
+      setIsSpaceMinimized(false);
+  };
+
+  const handleEndSpace = () => {
+      setCurrentSpace(null);
+      setIsSpaceMinimized(false);
+  };
 
   const renderContent = () => {
     switch (activeView) {
@@ -173,11 +236,21 @@ export default function AppPage() {
   if (!isLoggedIn) {
     return (
       <div className={theme}>
-        <LoginView onLogin={() => setIsLoggedIn(true)} />
+        <LoginView onLogin={handleLogin} />
       </div>
     )
   }
-
+  // Show Onboarding Flow if active
+  if (isOnboarding) {
+      return (
+        <div className={theme}>
+           <OnboardingFlow 
+              initialUser={currentUser} 
+              onComplete={handleOnboardingComplete} 
+           />
+        </div>
+      );
+  }
   return (
     <div className={theme}>
       <div className="min-h-screen bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex justify-center transition-colors">
@@ -194,7 +267,9 @@ export default function AppPage() {
             <nav className="space-y-2">
               <SidebarLink icon={Home} label="Home" active={activeView === AppView.FEED} onClick={() => setActiveView(AppView.FEED)} />
               <SidebarLink icon={Search} label="Explore" active={activeView === AppView.EXPLORE} onClick={() => setActiveView(AppView.EXPLORE)} />
+
               <SidebarLink icon={Bell} label="Notifications" active={activeView === AppView.NOTIFICATIONS} onClick={() => setActiveView(AppView.NOTIFICATIONS)} />
+              <SidebarLink icon={Radio} label="Spaces" onClick={() => setIsSpaceCreationOpen(true)} />
               <SidebarLink icon={User} label="Profile" active={activeView === AppView.PROFILE} onClick={() => setActiveView(AppView.PROFILE)} />
               <SidebarLink icon={Settings} label="Display" onClick={() => setIsDisplayModalOpen(true)} />
             </nav>
@@ -322,7 +397,37 @@ export default function AppPage() {
             <User size={24} fill={activeView === AppView.PROFILE ? "currentColor" : "none"} />
           </div>
         </div>
+                {/* Space Docked Player */}
+        {currentSpace && isSpaceMinimized && (
+            <SpaceMinPlayer 
+                space={currentSpace} 
+                onMaximize={() => setIsSpaceMinimized(false)}
+                onClose={handleEndSpace}
+            />
+        )}
 
+        {/* Full Screen Space View */}
+        {currentSpace && !isSpaceMinimized && (
+            <ActiveSpaceView 
+                space={currentSpace} 
+                currentUser={currentUser} 
+                onMinimize={() => setIsSpaceMinimized(true)}
+                onLeave={() => {
+                    // Logic to remove user from participants
+                    handleEndSpace();
+                }}
+                onEnd={handleEndSpace}
+            />
+        )}
+
+        {/* Space Creation Modal */}
+        {isSpaceCreationOpen && (
+            <SpaceCreationModal 
+                currentUser={currentUser}
+                onClose={() => setIsSpaceCreationOpen(false)}
+                onStartSpace={handleStartSpace}
+            />
+        )}
         {/* Modals */}
         {isComposeOpen && (
           <ComposeFlow currentUser={currentUser} onClose={() => setIsComposeOpen(false)} onPublish={handlePublish} />
