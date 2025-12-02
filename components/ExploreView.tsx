@@ -8,12 +8,22 @@ import { Search, TrendingUp } from "lucide-react"
 interface ExploreViewProps {
   posts: Post[]
   onInteract: (post: Post) => void
+  onAskAi?: (post: Post) => void
+  onViewContext?: (post: Post) => void
   onLike: (postId: string) => void
   searchQuery: string
   onSearchChange: (query: string) => void
 }
 
-export const ExploreView: React.FC<ExploreViewProps> = ({ posts, onInteract, onLike, searchQuery, onSearchChange }) => {
+export const ExploreView: React.FC<ExploreViewProps> = ({
+  posts,
+  onInteract,
+  onAskAi,
+  onViewContext,
+  onLike,
+  searchQuery,
+  onSearchChange,
+}) => {
   const filteredPosts = posts.filter(
     (post) =>
       post.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -63,7 +73,16 @@ export const ExploreView: React.FC<ExploreViewProps> = ({ posts, onInteract, onL
 
       <div className="pb-20">
         {filteredPosts.length > 0 ? (
-          filteredPosts.map((post) => <PostCard key={post.id} post={post} onInteract={onInteract} onLike={onLike} />)
+          filteredPosts.map((post) => (
+            <PostCard
+              key={post.id}
+              post={post}
+              onInteract={onInteract}
+              onAskAi={onAskAi}
+              onViewContext={onViewContext}
+              onLike={onLike}
+            />
+          ))
         ) : (
           <div className="p-8 text-center text-slate-500">
             <Search className="mx-auto mb-4 opacity-20" size={48} />

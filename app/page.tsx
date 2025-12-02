@@ -4,7 +4,6 @@ import { useState, useEffect } from "react"
 import { User, Bell, PenTool, Search, LogOut, Settings, Home } from "lucide-react"
 import { MOCK_POSTS, CURRENT_USER, MOCK_NOTIFICATIONS, MOCK_USERS } from "@/constants"
 import { type Post, AppView, type User as UserType } from "@/types"
-import { PostCard } from "@/components/PostCard"
 import { ComposeFlow } from "@/components/ComposeFlow"
 import { InteractionModal } from "@/components/InteractionModal"
 import { Button } from "@/components/Button"
@@ -15,6 +14,10 @@ import { LoginView } from "@/components/LoginView"
 import { Logo } from "@/components/Logo"
 import { DisplayModal } from "@/components/DisplayModal"
 import { getStorageItem, setStorageItem } from "@/lib/client-storage"
+import { FeedView } from "@/components/FeedView"
+import { SidebarLink } from "@/components/SidebarLink"
+import { AiChatModal } from "@/components/AiChatModal"
+import { ContextProfileModal } from "@/components/ContextProfileModal"
 
 export default function AppPage() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
@@ -46,7 +49,7 @@ export default function AppPage() {
   // UI State
   const [activeView, setActiveView] = useState<AppView>(AppView.FEED)
   const [feedTab, setFeedTab] = useState<"foryou" | "following">("foryou")
-  const [activePost, setActivePost] = useState<Post | null>(null)
+  const [interaction, setInteraction] = useState<{ post: Post; mode: "comment" | "askAi" | "context" } | null>(null)
   const [isComposeOpen, setIsComposeOpen] = useState(false)
   const [isDisplayModalOpen, setIsDisplayModalOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
@@ -109,25 +112,9 @@ export default function AppPage() {
     setActiveView(AppView.FEED)
   }
 
-  const SidebarLink = ({
-    icon: Icon,
-    label,
-    view,
-    active = false,
-    onClick,
-  }: { icon: any; label: string; view?: AppView; active?: boolean; onClick?: () => void }) => (
-    <div
-      onClick={() => (onClick ? onClick() : view && setActiveView(view))}
-      className={`flex items-center gap-4 p-3 rounded-full cursor-pointer transition-all duration-200 ${
-        active
-          ? "font-bold text-slate-900 dark:text-white bg-slate-100 dark:bg-transparent"
-          : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-950 hover:text-indigo-600 dark:hover:text-indigo-400"
-      }`}
-    >
-      <Icon size={26} fill={active ? "currentColor" : "none"} />
-      <span className="text-xl hidden xl:block">{label}</span>
-    </div>
-  )
+  const openInteraction = (post: Post, mode: "comment" | "askAi" | "context" = "comment") => {
+    setInteraction({ post, mode })
+  }
 
   const renderContent = () => {
     switch (activeView) {
@@ -136,7 +123,10 @@ export default function AppPage() {
           <ProfileView
             user={currentUser}
             posts={posts}
-            onInteract={(p) => setActivePost(p)}
+            onInteract={(p) => openInteraction(p, "comment")}
+            onComment={(p) => openInteraction(p, "comment")}
+            onAskAi={(p) => openInteraction(p, "askAi")}
+            onViewContext={(p) => openInteraction(p, "context")}
             onLike={handleLike}
             onLogout={handleLogout}
             onUpdateProfile={handleUpdateProfile}
@@ -150,128 +140,32 @@ export default function AppPage() {
         return (
           <ExploreView
             posts={posts}
-            onInteract={(p) => setActivePost(p)}
+            onInteract={(p) => openInteraction(p, "comment")}
             onLike={handleLike}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
+            onAskAi={(p) => openInteraction(p, "askAi")}
+            onViewContext={(p) => openInteraction(p, "context")}
           />
         )
       case AppView.FEED:
       default:
-        console.log("[v0] feedTab:", feedTab)
-        console.log("[v0] followingSet:", Array.from(followingSet))
-
-        const displayPosts =
-          feedTab === "foryou"
-            ? posts
-            : posts.filter((p) => {
-                const isFollowing = followingSet.has(p.authorHandle)
-                const isOwnPost = p.authorHandle === currentUser.handle
-                console.log("[v0] Post:", p.authorHandle, "Following:", isFollowing, "Own:", isOwnPost)
-                return isFollowing || isOwnPost
-              })
-
-        console.log("[v0] displayPosts count:", displayPosts.length)
-
         return (
-          <div>
-            {/* Desktop Header */}
-            <div className="sticky top-0 z-10 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 p-0 hidden md:block transition-colors">
-              <div
-                className="font-bold text-xl cursor-pointer p-4 pb-2 text-slate-900 dark:text-slate-100"
-                onClick={() => typeof window !== "undefined" && window.scrollTo(0, 0)}
-              >
-                Home
-              </div>
-              <div className="flex border-b border-slate-200 dark:border-slate-800">
-                <div
-                  className={`flex-1 text-center py-3 font-bold cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-900/50 transition-colors relative ${feedTab === "foryou" ? "text-slate-900 dark:text-white" : "text-slate-500"}`}
-                  onClick={() => setFeedTab("foryou")}
-                >
-                  For You
-                  {feedTab === "foryou" && (
-                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-1 bg-indigo-500 rounded-full"></div>
-                  )}
-                </div>
-                <div
-                  className={`flex-1 text-center py-3 font-bold cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-900/50 transition-colors relative ${feedTab === "following" ? "text-slate-900 dark:text-white" : "text-slate-500"}`}
-                  onClick={() => setFeedTab("following")}
-                >
-                  Following
-                  {feedTab === "following" && (
-                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-1 bg-indigo-500 rounded-full"></div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Mobile Tabs (Sticky below the main mobile header) */}
-            <div className="md:hidden sticky top-[64px] z-10 bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex transition-colors">
-              <div
-                className={`flex-1 text-center py-3 font-bold cursor-pointer relative ${feedTab === "foryou" ? "text-slate-900 dark:text-white" : "text-slate-500"}`}
-                onClick={() => setFeedTab("foryou")}
-              >
-                For You
-                {feedTab === "foryou" && (
-                  <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-1 bg-indigo-500 rounded-full"></div>
-                )}
-              </div>
-              <div
-                className={`flex-1 text-center py-3 font-bold cursor-pointer relative ${feedTab === "following" ? "text-slate-900 dark:text-white" : "text-slate-500"}`}
-                onClick={() => setFeedTab("following")}
-              >
-                Following
-                {feedTab === "following" && (
-                  <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-1 bg-indigo-500 rounded-full"></div>
-                )}
-              </div>
-            </div>
-
-            {/* Compose Trigger (Desktop) */}
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 hidden md:flex gap-4">
-              <img
-                src={currentUser.avatarUrl || "/placeholder.svg"}
-                alt="Me"
-                className="w-10 h-10 rounded-full cursor-pointer hover:opacity-80"
-                onClick={() => setActiveView(AppView.PROFILE)}
-              />
-              <div
-                className="flex-1 bg-slate-100 dark:bg-slate-900 rounded-full p-3 px-4 text-slate-500 cursor-text hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
-                onClick={() => setIsComposeOpen(true)}
-              >
-                What needs deeper context?
-              </div>
-            </div>
-
-            {/* Posts */}
-            <div>
-              {displayPosts.length > 0 ? (
-                displayPosts.map((post) => (
-                  <PostCard key={post.id} post={post} onInteract={(p) => setActivePost(p)} onLike={handleLike} />
-                ))
-              ) : (
-                <div className="p-12 text-center text-slate-500">
-                  <p className="text-lg font-bold mb-2">No posts yet.</p>
-                  <p className="text-sm mb-4">
-                    {feedTab === "following"
-                      ? "You aren't following anyone who has posted recently."
-                      : "Check back later for more updates."}
-                  </p>
-                  {feedTab === "following" && (
-                    <Button variant="secondary" onClick={() => setActiveView(AppView.EXPLORE)}>
-                      Find people to follow
-                    </Button>
-                  )}
-                </div>
-              )}
-
-              {displayPosts.length > 0 && (
-                <div className="p-8 text-center text-slate-500">
-                  <p>End of feed.</p>
-                </div>
-              )}
-            </div>
-          </div>
+          <FeedView
+            currentUser={currentUser}
+            feedTab={feedTab}
+            posts={posts}
+            followingSet={followingSet}
+            onTabChange={setFeedTab}
+            onInteract={(post) => openInteraction(post, "comment")}
+            onComment={(post) => openInteraction(post, "comment")}
+            onAskAi={(post) => openInteraction(post, "askAi")}
+            onViewContext={(post) => openInteraction(post, "context")}
+            onLike={handleLike}
+            onCompose={() => setIsComposeOpen(true)}
+            onExplore={() => setActiveView(AppView.EXPLORE)}
+            onOpenProfile={() => setActiveView(AppView.PROFILE)}
+          />
         )
     }
   }
@@ -298,20 +192,10 @@ export default function AppPage() {
             </div>
 
             <nav className="space-y-2">
-              <SidebarLink icon={Home} label="Home" view={AppView.FEED} active={activeView === AppView.FEED} />
-              <SidebarLink
-                icon={Search}
-                label="Explore"
-                view={AppView.EXPLORE}
-                active={activeView === AppView.EXPLORE}
-              />
-              <SidebarLink
-                icon={Bell}
-                label="Notifications"
-                view={AppView.NOTIFICATIONS}
-                active={activeView === AppView.NOTIFICATIONS}
-              />
-              <SidebarLink icon={User} label="Profile" view={AppView.PROFILE} active={activeView === AppView.PROFILE} />
+              <SidebarLink icon={Home} label="Home" active={activeView === AppView.FEED} onClick={() => setActiveView(AppView.FEED)} />
+              <SidebarLink icon={Search} label="Explore" active={activeView === AppView.EXPLORE} onClick={() => setActiveView(AppView.EXPLORE)} />
+              <SidebarLink icon={Bell} label="Notifications" active={activeView === AppView.NOTIFICATIONS} onClick={() => setActiveView(AppView.NOTIFICATIONS)} />
+              <SidebarLink icon={User} label="Profile" active={activeView === AppView.PROFILE} onClick={() => setActiveView(AppView.PROFILE)} />
               <SidebarLink icon={Settings} label="Display" onClick={() => setIsDisplayModalOpen(true)} />
             </nav>
 
@@ -444,7 +328,17 @@ export default function AppPage() {
           <ComposeFlow currentUser={currentUser} onClose={() => setIsComposeOpen(false)} onPublish={handlePublish} />
         )}
 
-        {activePost && <InteractionModal post={activePost} onClose={() => setActivePost(null)} />}
+        {interaction?.mode === "comment" && (
+          <InteractionModal post={interaction.post} onClose={() => setInteraction(null)} />
+        )}
+
+        {interaction?.mode === "askAi" && (
+          <AiChatModal post={interaction.post} onClose={() => setInteraction(null)} />
+        )}
+
+        {interaction?.mode === "context" && (
+          <ContextProfileModal post={interaction.post} onClose={() => setInteraction(null)} />
+        )}
 
         {isDisplayModalOpen && (
           <DisplayModal theme={theme} setTheme={setTheme} onClose={() => setIsDisplayModalOpen(false)} />

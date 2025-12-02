@@ -14,6 +14,9 @@ interface ProfileViewProps {
   posts: Post[]
   onInteract: (post: Post) => void
   onLike: (postId: string) => void
+  onAskAi?: (post: Post) => void
+  onViewContext?: (post: Post) => void
+  onComment?: (post: Post) => void
   onLogout?: () => void
   onUpdateProfile: (user: User) => void
   followingSet: Set<string>
@@ -27,6 +30,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   posts,
   onInteract,
   onLike,
+  onAskAi,
+  onViewContext,
+  onComment,
   onLogout,
   onUpdateProfile,
   followingSet,
@@ -226,7 +232,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               {userPosts.length > 0 ? (
                 userPosts.map((post) => (
                   <div key={post.id} className="-mx-4 md:mx-0">
-                    <PostCard post={post} onInteract={onInteract} onLike={onLike} />
+                    <PostCard
+                      post={post}
+                      onInteract={onInteract}
+                      onComment={onComment}
+                      onAskAi={onAskAi}
+                      onViewContext={onViewContext}
+                      onLike={onLike}
+                    />
                   </div>
                 ))
               ) : (
@@ -275,7 +288,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               {likedPosts.length > 0 ? (
                 likedPosts.map((post) => (
                   <div key={post.id} className="-mx-4 md:mx-0">
-                    <PostCard post={post} onInteract={onInteract} onLike={onLike} />
+                    <PostCard
+                      post={post}
+                      onInteract={onInteract}
+                      onComment={onComment}
+                      onAskAi={onAskAi}
+                      onViewContext={onViewContext}
+                      onLike={onLike}
+                    />
                   </div>
                 ))
               ) : (

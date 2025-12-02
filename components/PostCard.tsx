@@ -10,9 +10,12 @@ interface PostCardProps {
   onInteract: (post: Post) => void
   onLike?: (postId: string) => void
   onReply?: (post: Post) => void
+  onComment?: (post: Post) => void
+  onAskAi?: (post: Post) => void
+  onViewContext?: (post: Post) => void
 }
 
-export const PostCard: React.FC<PostCardProps> = ({ post, onInteract, onLike, onReply }) => {
+export const PostCard: React.FC<PostCardProps> = ({ post, onInteract, onLike, onReply, onComment, onAskAi, onViewContext }) => {
   const [showShareMenu, setShowShareMenu] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -39,7 +42,9 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onInteract, onLike, on
 
   const handleReply = (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (onReply) {
+    if (onComment) {
+      onComment(post)
+    } else if (onReply) {
       onReply(post)
     } else {
       onInteract(post)
@@ -114,10 +119,7 @@ Join the discuzzion at Discuzz.ai
   }
 
   return (
-    <div
-      onClick={() => onInteract(post)}
-      className="bg-white dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 p-4 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors cursor-pointer animate-in fade-in duration-500 relative"
-    >
+    <div className="bg-white dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 p-4 animate-in fade-in duration-500 relative">
       {/* Visual Feedback Toast */}
       {feedback && (
         <div className="absolute top-4 right-4 bg-indigo-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg z-20 animate-in fade-in slide-in-from-top-2">
@@ -143,10 +145,21 @@ Join the discuzzion at Discuzz.ai
             </span>
 
             {/* AI Delegate Badge */}
-            <div className="ml-auto flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/20 shrink-0">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                if (onViewContext) {
+                  onViewContext(post)
+                } else {
+                  onInteract(post)
+                }
+              }}
+              className="ml-auto flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/20 shrink-0 hover:brightness-95"
+            >
               <Bot size={12} />
               <span className="text-[10px] font-medium uppercase tracking-wide">AI Context</span>
-            </div>
+            </button>
           </div>
 
           <p className="text-slate-800 dark:text-slate-200 text-base leading-relaxed whitespace-pre-wrap mb-3 break-words">
@@ -183,7 +196,11 @@ Join the discuzzion at Discuzz.ai
             <button
               onClick={(e) => {
                 e.stopPropagation()
-                onInteract(post)
+                if (onAskAi) {
+                  onAskAi(post)
+                } else {
+                  onInteract(post)
+                }
               }}
               className="flex items-center gap-2 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors group flex-1"
               title="Chat with AI Delegate"

@@ -1,13 +1,13 @@
-import { GoogleGenAI } from "@google/genai"
 import { NextResponse } from "next/server"
+import OpenAI from "openai"
 import type { Message } from "@/types"
 
 const getAiClient = () => {
-  const apiKey = process.env.API_KEY
+  const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) {
-    throw new Error("API_KEY is missing from environment variables")
+    throw new Error("OPENAI_API_KEY is missing from environment variables")
   }
-  return new GoogleGenAI({ apiKey })
+  return new OpenAI({ apiKey })
 }
 
 export async function POST(request: Request) {
@@ -41,23 +41,32 @@ export async function POST(request: Request) {
       5. Do not start with "As the author..." just speak directly.
     `
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: `
-        Previous Chat:
-        ${historyText}
+    const userContent = `
+      Previous Chat:
+      ${historyText}
 
-        Reader: ${userQuery}
-      `,
-      config: {
-        systemInstruction: systemInstruction,
-      },
+      Reader: ${userQuery}
+    `
+
+    const completion = await ai.chat.completions.create({
+      model: "gpt-4.1-mini", // You can switch to gpt-4o, gpt-4.1, etc.
+      messages: [
+        { role: "system", content: systemInstruction },
+        { role: "user", content: userContent }
+      ],
+      max_tokens: 300
     })
 
-    const responseText = response.text || "I cannot clarify that based on the current context."
+    const responseText =
+      completion.choices[0]?.message?.content ||
+      "I cannot clarify that based on the current context."
+
     return NextResponse.json({ response: responseText })
   } catch (error) {
     console.error("Error:", error)
-    return NextResponse.json({ response: "I am unable to respond at this moment." }, { status: 200 })
+    return NextResponse.json(
+      { response: "I am unable to respond at this moment." },
+      { status: 200 }
+    )
   }
 }

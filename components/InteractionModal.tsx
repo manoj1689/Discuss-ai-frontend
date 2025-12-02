@@ -11,16 +11,18 @@ import { MOCK_COMMENTS, CURRENT_USER } from "@/constants"
 interface InteractionModalProps {
   post: Post | null
   onClose: () => void
+  initialTab?: "discuss" | "chat"
+  showContextDefault?: boolean
 }
 
-export const InteractionModal: React.FC<InteractionModalProps> = ({ post, onClose }) => {
-  const [activeTab, setActiveTab] = useState<"discuss" | "chat">("discuss")
+export const InteractionModal: React.FC<InteractionModalProps> = ({ post, onClose, initialTab, showContextDefault }) => {
+  const [activeTab, setActiveTab] = useState<"discuss" | "chat">(initialTab || "discuss")
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
   const [isTyping, setIsTyping] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const commentsEndRef = useRef<HTMLDivElement>(null)
-  const [showContext, setShowContext] = useState(false)
+  const [showContext, setShowContext] = useState(!!showContextDefault)
 
   // Public Discussion State
   const [comments, setComments] = useState<Comment[]>(MOCK_COMMENTS)
@@ -36,10 +38,11 @@ export const InteractionModal: React.FC<InteractionModalProps> = ({ post, onClos
           timestamp: Date.now(),
         },
       ])
-      // Reset to discuss tab on open
-      setActiveTab("discuss")
+      // Reset based on trigger intent
+      setActiveTab(initialTab || "discuss")
+      setShowContext(!!showContextDefault)
     }
-  }, [post])
+  }, [post, initialTab, showContextDefault])
 
   useEffect(() => {
     if (activeTab === "chat" && scrollRef.current) {
