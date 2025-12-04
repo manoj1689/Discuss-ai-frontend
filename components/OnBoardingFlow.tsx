@@ -5,14 +5,24 @@ import { Logo } from './Logo';
 import { MOCK_USERS } from '../constants';
 import { Camera, Mail, Globe, Check, Bell, ChevronRight, Hash, UserPlus, ArrowLeft, Lock } from 'lucide-react';
 
+const LANGUAGES = ["English", "Spanish", "French", "German", "Hindi", "Japanese", "Chinese", "Arabic"];
+const TOPICS = [
+  "Technology", "AI & ML", "Crypto", "Startups", "Coding",
+  "Science", "Space", "Physics", "Biotech",
+  "Arts", "Design", "Music", "Photography", "Cinema",
+  "News", "Politics", "Economics", "History",
+  "Sports", "Gaming", "Fitness", "Travel", "Food"
+];
+
 interface OnboardingFlowProps {
   initialUser: User;
-  onComplete: (user: User, following: Set<string>) => void;
+  onComplete: (payload: { user: User; following: Set<string>; interests: string[]; languages: string[] }) => void;
+  isSaving?: boolean;
 }
 
 type Step = 'VERIFICATION' | 'PROFILE' | 'INTERESTS' | 'FOLLOWS' | 'PERMISSIONS';
 
-export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ initialUser, onComplete }) => {
+export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ initialUser, onComplete, isSaving = false }) => {
   const [step, setStep] = useState<Step>('VERIFICATION');
   
   // User Data State
@@ -21,8 +31,9 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ initialUser, onC
   
   // Local Step States
   const [verificationCode, setVerificationCode] = useState(['', '', '', '', '', '']);
-  const [selectedInterests, setSelectedInterests] = useState<Set<string>>(new Set());
-  const [selectedLanguages, setSelectedLanguages] = useState<Set<string>>(new Set(['English']));
+  const [selectedInterests, setSelectedInterests] = useState<Set<string>>(new Set(initialUser.interests || []));
+  const initialLanguage = initialUser.language && LANGUAGES.includes(initialUser.language) ? initialUser.language : 'English';
+  const [selectedLanguages, setSelectedLanguages] = useState<Set<string>>(new Set([initialLanguage]));
   
   const verificationRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -51,16 +62,6 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ initialUser, onC
     setUserData(prev => ({ ...prev, [name]: value }));
   };
 
-  // Step 3: Interests Data
-  const LANGUAGES = ["English", "Spanish", "French", "German", "Hindi", "Japanese", "Chinese", "Arabic"];
-  const TOPICS = [
-    "Technology", "AI & ML", "Crypto", "Startups", "Coding",
-    "Science", "Space", "Physics", "Biotech",
-    "Arts", "Design", "Music", "Photography", "Cinema",
-    "News", "Politics", "Economics", "History",
-    "Sports", "Gaming", "Fitness", "Travel", "Food"
-  ];
-
   const toggleSetItem = (set: Set<string>, item: string, updateState: React.Dispatch<React.SetStateAction<Set<string>>>) => {
     const newSet = new Set(set);
     if (newSet.has(item)) newSet.delete(item);
@@ -83,7 +84,15 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ initialUser, onC
       case 'PROFILE': setStep('INTERESTS'); break;
       case 'INTERESTS': setStep('FOLLOWS'); break;
       case 'FOLLOWS': setStep('PERMISSIONS'); break;
-      case 'PERMISSIONS': onComplete(userData, following); break;
+      case 'PERMISSIONS':
+        if (isSaving) return;
+        onComplete({
+          user: userData,
+          following,
+          interests: Array.from(selectedInterests),
+          languages: Array.from(selectedLanguages)
+        });
+        break;
     }
   };
 
@@ -317,14 +326,15 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ initialUser, onC
        </div>
 
        <div className="mt-auto space-y-3">
-          <Button className="w-full h-12 rounded-full" onClick={handleNext}>
-             Allow notifications
+          <Button className="w-full h-12 rounded-full" onClick={handleNext} disabled={isSaving}>
+             {isSaving ? 'Saving preferences...' : 'Allow notifications'}
           </Button>
           <button 
              onClick={handleNext}
-             className="w-full py-3 text-slate-500 font-medium hover:text-slate-900 dark:hover:text-white transition-colors"
+             className="w-full py-3 text-slate-500 font-medium hover:text-slate-900 dark:hover:text-white transition-colors disabled:opacity-60"
+             disabled={isSaving}
           >
-             Skip for now
+             {isSaving ? 'Saving preferences...' : 'Skip for now'}
           </button>
        </div>
     </div>

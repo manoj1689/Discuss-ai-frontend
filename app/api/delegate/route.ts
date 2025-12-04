@@ -3,7 +3,7 @@ import OpenAI from "openai"
 import type { Message } from "@/types"
 
 const getAiClient = () => {
-  const apiKey = process.env.OPENAI_API_KEY
+  const apiKey = process.env.OPENAI_API_KEY || process.env.NEXT_PUBLIC_OPENAI_API_KEY
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is missing from environment variables")
   }

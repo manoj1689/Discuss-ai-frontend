@@ -1,24 +1,73 @@
-import React, { useState } from 'react';
-import { X } from 'lucide-react';
-import { Button } from './Button';
-import { Logo } from './Logo';
+import React, { useState } from "react"
+import { X } from "lucide-react"
+import { Logo } from "./Logo"
+import { hasFirebaseConfig, signInWithGoogleFirebase } from "@/lib/firebaseClient"
 
 interface LoginViewProps {
-  onLogin: () => void;
+  onLogin: (payload: { email: string; password: string }) => Promise<void> | void
+  onSignup: (payload: { email: string; password: string }) => Promise<void> | void
+  onGoogleLogin: (idToken: string) => Promise<void> | void
 }
 
-export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
-  const [authStep, setAuthStep] = useState<'landing' | 'signin' | 'signup'>('landing');
-  const [username, setUsername] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+export const LoginView: React.FC<LoginViewProps> = ({ onLogin, onSignup, onGoogleLogin }) => {
+  const [authStep, setAuthStep] = useState<"landing" | "signin" | "signup">("landing")
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
+  const [formError, setFormError] = useState<string | undefined>()
+  const [googleError, setGoogleError] = useState<string | undefined>()
 
-  const handleAuth = () => {
-    setIsLoading(true);
-    setTimeout(() => {
-      onLogin();
-      setIsLoading(false);
-    }, 1500);
-  };
+  const resetState = () => {
+    setEmail("")
+    setPassword("")
+    setFormError(undefined)
+    setGoogleError(undefined)
+    setIsLoading(false)
+  }
+
+  const closeModal = () => {
+    resetState()
+    setAuthStep("landing")
+  }
+
+  const handleAuthSubmit = async (type: "signin" | "signup") => {
+    if (!email || !password) {
+      setFormError("Email and password are required")
+      return
+    }
+    setIsLoading(true)
+    setFormError(undefined)
+    try {
+      if (type === "signup") {
+        await onSignup({ email, password })
+      } else {
+        await onLogin({ email, password })
+      }
+      closeModal()
+    } catch (err: any) {
+      setFormError(err?.message || "Unable to authenticate")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleGoogle = async () => {
+    if (!hasFirebaseConfig) {
+      setGoogleError("Google Sign-In is not configured")
+      return
+    }
+    setIsLoading(true)
+    setGoogleError(undefined)
+    try {
+      const { idToken } = await signInWithGoogleFirebase()
+      await onGoogleLogin(idToken)
+      closeModal()
+    } catch (err: any) {
+      setGoogleError(err?.message || "Google sign-in failed")
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const GoogleIcon = () => (
     <svg viewBox="0 0 24 24" className="w-5 h-5 mr-2" aria-hidden="true">
@@ -39,21 +88,15 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
         d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
       />
     </svg>
-  );
-
-  const AppleIcon = () => (
-    <svg viewBox="0 0 24 24" className="w-5 h-5 mr-2" fill="currentColor">
-      <path d="M16.365 1.43c0 1.14-.493 2.27-1.177 3.08-.684.816-1.813 1.508-2.932 1.508-1.14 0-2.27-.49-3.08-1.177-.816-.684-1.508-1.813-1.508-2.932 0-1.14.49-2.27 1.177-3.08C9.66 1.014 10.79.322 11.91.322c1.14 0 2.27.49 3.08 1.177.816.684 1.508 1.813 1.508 2.932zm-1.52 15.03c1.22 3.06 4.21 4.22 4.21 4.22-.03.07-2.64 8.79-8.43 8.82-2.18.01-4.14-1.47-5.26-1.47-1.12 0-2.7 1.41-4.45 1.5-3.57.19-7.59-3.06-7.59-8.82 0-4.87 3.04-7.41 6.09-7.46 1.95-.03 3.8 1.34 5.01 1.34 1.22 0 3.53-1.65 5.92-1.4 1.01.04 3.86.41 5.68 3.12-4.59 2.27-3.83 8.67-1.18 10.15z"/>
-    </svg>
-  );
+  )
 
   // Modal for Sign In / Sign Up flows
-  const AuthModal = ({ title, type }: { title: string, type: 'signin' | 'signup' }) => (
+  const AuthModal = ({ title, type }: { title: string; type: "signin" | "signup" }) => (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
       <div className="bg-black border border-slate-800 w-full max-w-[600px] h-full md:h-auto md:min-h-[600px] md:max-h-[90vh] md:rounded-2xl relative flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
         <div className="flex items-center px-4 h-[53px]">
-          <button 
-            onClick={() => setAuthStep('landing')} 
+          <button
+            onClick={closeModal}
             className="p-2 -ml-2 hover:bg-slate-900 rounded-full text-slate-100 transition-colors"
           >
             <X size={20} />
@@ -68,14 +111,16 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
             <h2 className="text-3xl font-bold text-slate-100 mb-8">{title}</h2>
             
             <div className="space-y-6 max-w-[360px] w-full mx-auto">
-              <button className="w-full bg-white text-black font-bold rounded-full h-[40px] px-4 flex items-center justify-center hover:bg-slate-200 transition-colors">
+              <button
+                onClick={handleGoogle}
+                disabled={isLoading}
+                className="w-full bg-white text-black font-bold rounded-full h-[40px] px-4 flex items-center justify-center hover:bg-slate-200 transition-colors disabled:opacity-60"
+              >
                 <GoogleIcon />
-                Sign {type === 'signup' ? 'up' : 'in'} with Google
+                {isLoading ? "Processing..." : `Sign ${type === "signup" ? "up" : "in"} with Google`}
               </button>
-              <button className="w-full bg-white text-black font-bold rounded-full h-[40px] px-4 flex items-center justify-center hover:bg-slate-200 transition-colors">
-                <AppleIcon />
-                Sign {type === 'signup' ? 'up' : 'in'} with Apple
-              </button>
+
+              {googleError && <p className="text-sm text-red-400">{googleError}</p>}
               
               <div className="relative flex items-center py-1">
                 <div className="flex-grow border-t border-slate-700"></div>
@@ -84,31 +129,50 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
               </div>
 
               <div className="space-y-6">
-                <input 
-                  type="text" 
-                  placeholder="Phone, email, or username" 
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                <input
+                  type="email"
+                  placeholder="Email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   className="w-full bg-black border border-slate-700 rounded px-3 h-[56px] text-white focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-colors placeholder-slate-500"
                 />
-                
-                <button 
+
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-black border border-slate-700 rounded px-3 h-[56px] text-white focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-colors placeholder-slate-500"
+                />
+
+                {formError && <p className="text-sm text-red-400">{formError}</p>}
+
+                <button
                   className="w-full bg-slate-100 text-black font-bold rounded-full h-[46px] px-4 hover:bg-slate-200 transition-colors disabled:opacity-50"
-                  onClick={handleAuth}
-                  disabled={!username && isLoading}
+                  onClick={() => handleAuthSubmit(type)}
+                  disabled={isLoading}
                 >
-                  {isLoading ? 'Processing...' : (type === 'signup' ? 'Next' : 'Next')}
+                  {isLoading ? "Processing..." : type === "signup" ? "Create account" : "Sign in"}
                 </button>
 
-                 {type === 'signup' ? (
-                     <p className="text-sm text-slate-500">
-                        Have an account already? <button onClick={() => setAuthStep('signin')} className="text-indigo-500 hover:underline">Log in</button>
-                     </p>
-                 ) : (
-                     <button className="w-full border border-slate-700 text-white font-bold rounded-full h-[40px] px-4 hover:bg-slate-900 transition-colors">
-                         Forgot password?
-                     </button>
-                 )}
+                {type === "signup" ? (
+                  <p className="text-sm text-slate-500">
+                    Have an account already?{" "}
+                    <button
+                      onClick={() => {
+                        resetState()
+                        setAuthStep("signin")
+                      }}
+                      className="text-indigo-500 hover:underline"
+                    >
+                      Log in
+                    </button>
+                  </p>
+                ) : (
+                  <button className="w-full border border-slate-700 text-white font-bold rounded-full h-[40px] px-4 hover:bg-slate-900 transition-colors">
+                    Forgot password?
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -155,20 +219,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
 
                   <div className="space-y-3 w-[300px]">
                       <button 
-                          onClick={() => handleAuth()}
-                          className="w-full bg-white text-black font-bold rounded-full h-[40px] px-4 flex items-center justify-center hover:bg-slate-200 transition-colors"
+                        onClick={handleGoogle}
+                        className="w-full bg-white text-black font-bold rounded-full h-[40px] px-4 flex items-center justify-center hover:bg-slate-200 transition-colors disabled:opacity-60"
+                        disabled={isLoading}
                       >
-                          <GoogleIcon />
-                          Sign up with Google
+                        <GoogleIcon />
+                        Sign up with Google
                       </button>
-                      
-                      <button 
-                          onClick={() => handleAuth()}
-                          className="w-full bg-white text-black font-bold rounded-full h-[40px] px-4 flex items-center justify-center hover:bg-slate-200 transition-colors"
-                      >
-                          <AppleIcon />
-                          Sign up with Apple
-                      </button>
+                      {googleError && <p className="text-sm text-red-400">{googleError}</p>}
 
                       <div className="relative flex items-center py-1">
                           <div className="flex-grow border-t border-slate-800"></div>
@@ -176,11 +234,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
                           <div className="flex-grow border-t border-slate-800"></div>
                       </div>
 
-                      <button 
-                          onClick={() => setAuthStep('signup')}
-                          className="w-full bg-indigo-500 text-white font-bold rounded-full h-[40px] px-4 hover:bg-indigo-600 transition-colors"
+                      <button
+                        onClick={() => {
+                          resetState()
+                          setAuthStep("signup")
+                        }}
+                        className="w-full bg-indigo-500 text-white font-bold rounded-full h-[40px] px-4 hover:bg-indigo-600 transition-colors"
                       >
-                          Create account
+                        Create account
                       </button>
 
                       <p className="text-[11px] text-slate-500 leading-tight pt-1">
@@ -190,11 +251,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
 
                   <div className="mt-16">
                       <h3 className="text-[17px] font-bold mb-4 text-slate-100">Already have an account?</h3>
-                      <button 
-                          onClick={() => setAuthStep('signin')}
-                          className="w-[300px] border border-slate-600 text-indigo-400 font-bold rounded-full h-[40px] px-4 hover:bg-indigo-500/10 transition-colors"
+                      <button
+                        onClick={() => {
+                          resetState()
+                          setAuthStep("signin")
+                        }}
+                        className="w-[300px] border border-slate-600 text-indigo-400 font-bold rounded-full h-[40px] px-4 hover:bg-indigo-500/10 transition-colors"
                       >
-                          Sign in
+                        Sign in
                       </button>
                   </div>
               </div>
@@ -211,9 +275,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
         </div>
       </div>
 
-      {authStep === 'signin' && <AuthModal title="Sign in to Discuzz.ai" type="signin" />}
-      {authStep === 'signup' && <AuthModal title="Create your account" type="signup" />}
+      {authStep === "signin" && <AuthModal title="Sign in to Discuzz.ai" type="signin" />}
+      {authStep === "signup" && <AuthModal title="Create your account" type="signup" />}
 
     </div>
-  );
-};
+  )
+}

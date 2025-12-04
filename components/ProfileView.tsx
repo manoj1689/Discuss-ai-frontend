@@ -6,12 +6,12 @@ import type { User, Post } from "@/types"
 import { PostCard } from "./PostCard"
 import { MapPin, Calendar, LinkIcon, LogOut, MessageSquare, Heart, Sparkles, X } from "lucide-react"
 import { Button } from "./Button"
-import { MOCK_USERS } from "@/constants"
 import { EditProfileModal } from "./EditProfileModal"
 
 interface ProfileViewProps {
   user: User
   posts: Post[]
+  followUsers?: User[]
   onInteract: (post: Post) => void
   onLike: (postId: string) => void
   onAskAi?: (post: Post) => void
@@ -37,6 +37,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onUpdateProfile,
   followingSet,
   onToggleFollow,
+  followUsers = [],
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>("posts")
   const [showFollowList, setShowFollowList] = useState<"followers" | "following" | null>(null)
@@ -63,10 +64,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   ]
 
   const getFollowUsers = () => {
+    if (followUsers.length === 0) return []
     if (showFollowList === "following") {
-      return MOCK_USERS.filter((u) => followingSet.has(u.handle))
+      return followUsers.filter((u) => followingSet.has(u.handle.toLowerCase()) || followingSet.has(u.handle))
     }
-    return MOCK_USERS
+    return followUsers
   }
 
   const followUsersList = getFollowUsers()

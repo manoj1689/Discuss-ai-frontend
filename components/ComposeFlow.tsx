@@ -5,12 +5,18 @@ import { useState, useEffect, useRef } from "react"
 import { Bot, X, ArrowRight, Sparkles, Check, ChevronLeft, Edit2, ImageIcon } from "lucide-react"
 import { Button } from "./Button"
 import { generateInterviewQuestions, generateContextProfile } from "@/services/geminiService"
-import type { ContextProfile, Message, Post, User } from "@/types"
+import type { ContextProfile, Message, User } from "@/types"
+import { useAppSelector } from "@/store/hooks"
 
 interface ComposeFlowProps {
   currentUser: User
   onClose: () => void
-  onPublish: (post: Post) => void
+  onPublish: (payload: {
+    content: string
+    imageUrl?: string | null
+    contextProfile: ContextProfile
+    interviewHistory: Message[]
+  }) => void
 }
 
 type Step = "DRAFT" | "INTERVIEW" | "SUMMARY" | "REVIEW"
@@ -34,6 +40,7 @@ export const ComposeFlow: React.FC<ComposeFlowProps> = ({ currentUser, onClose, 
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const accessToken = useAppSelector((state) => state.auth.accessToken)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -43,7 +50,7 @@ export const ComposeFlow: React.FC<ComposeFlowProps> = ({ currentUser, onClose, 
     if (!draft.trim()) return
     setIsLoading(true)
     try {
-      const questions = await generateInterviewQuestions(draft)
+      const questions = await generateInterviewQuestions(draft, accessToken)
       setQuestionQueue(questions)
       setAnswers(new Array(questions.length).fill(""))
       setCurrentQuestionIndex(0)
@@ -172,7 +179,7 @@ export const ComposeFlow: React.FC<ComposeFlowProps> = ({ currentUser, onClose, 
         { id: `a-${i}`, role: "user" as const, content: answers[i], timestamp: 0 },
       ])
 
-      const generatedProfile = await generateContextProfile(draft, cleanHistory)
+      const generatedProfile = await generateContextProfile(draft, cleanHistory, accessToken)
       setProfile(generatedProfile)
       setStep("REVIEW")
     } catch (e) {
@@ -185,20 +192,17 @@ export const ComposeFlow: React.FC<ComposeFlowProps> = ({ currentUser, onClose, 
   const handleFinalPublish = () => {
     if (!profile) return
 
-    const newPost: Post = {
-      id: Date.now().toString(),
-      authorName: currentUser.name,
-      authorHandle: currentUser.handle,
-      avatarUrl: currentUser.avatarUrl,
-      content: draft,
-      imageUrl: attachedImage || undefined,
-      timestamp: Date.now(),
-      likes: 0,
-      replyCount: 0,
-      contextProfile: profile,
-    }
+    const interviewHistory: Message[] = questionQueue.flatMap((q, i) => [
+      { id: `q-${i}`, role: "model" as const, content: q, timestamp: Date.now() },
+      { id: `a-${i}`, role: "user" as const, content: answers[i], timestamp: Date.now() },
+    ])
 
-    onPublish(newPost)
+    onPublish({
+      content: draft,
+      imageUrl: attachedImage,
+      contextProfile: profile,
+      interviewHistory,
+    })
     onClose()
   }
 

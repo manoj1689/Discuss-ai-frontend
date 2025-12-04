@@ -1,9 +1,9 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { User, Bell, PenTool, Search, LogOut, Settings, Home, Radio } from "lucide-react"
-import { MOCK_POSTS, CURRENT_USER, MOCK_NOTIFICATIONS, MOCK_USERS } from "@/constants"
-import { type Post, AppView, type User as UserType } from "@/types"
+import { CURRENT_USER } from "@/constants"
+import { type Post, AppView, type User as UserType, type ContextProfile, type Message } from "@/types"
 import { ComposeFlow } from "@/components/ComposeFlow"
 import { InteractionModal } from "@/components/InteractionModal"
 import { Button } from "@/components/Button"
@@ -13,6 +13,7 @@ import { ExploreView } from "@/components/ExploreView"
 import { LoginView } from "@/components/LoginView"
 import { Logo } from "@/components/Logo"
 import { DisplayModal } from "@/components/DisplayModal"
+import { apiFetch } from "@/lib/api"
 import { getStorageItem, setStorageItem } from "@/lib/client-storage"
 import { FeedView } from "@/components/FeedView"
 import { SidebarLink } from "@/components/SidebarLink"
@@ -22,13 +23,96 @@ import { OnboardingFlow } from "@/components/OnBoardingFlow"
 import { SpaceCreationModal } from "@/components/SpaceCreationModal"
 import { ActiveSpaceView } from "@/components/ActiveSpaceView"
 import { SpaceMinPlayer } from "@/components/SpaceMinPlayer"
+import { useAppDispatch, useAppSelector } from "@/store/hooks"
+import {
+  login,
+  signup,
+  fetchCurrentUser,
+  logout as logoutAction,
+  setUser,
+  loginWithGoogle,
+  loadStoredTokens,
+  setTokens,
+} from "@/store/authSlice"
+import { fetchFeed, toggleLike, createPost, searchPosts, clearSearch, fetchUserPosts } from "@/store/postsSlice"
+import { fetchNotifications } from "@/store/notificationsSlice"
+import {
+  createSpace as createSpaceAction,
+  endSpace as endSpaceAction,
+  setCurrentSpace as setCurrentSpaceAction,
+  fetchSpaces,
+  leaveSpace,
+} from "@/store/spacesSlice"
+import { fetchFollowing, followUser, unfollowUser } from "@/store/usersSlice"
+
+const onboardingFlagKey = (user?: UserType | null) => (user?.id ? `discuzz:onboarded:${user.id}` : null)
+
+const hasCompletedOnboarding = (user?: UserType | null) => {
+  if (!user) return false
+  if (user.onboardingComplete) return true
+  if (Array.isArray(user.interests) && user.interests.length > 0) return true
+
+  const key = onboardingFlagKey(user)
+  return key ? getStorageItem(key) === "true" : false
+}
+
+const rememberOnboardingCompletion = (user?: UserType | null) => {
+  const key = onboardingFlagKey(user)
+  if (key) {
+    setStorageItem(key, "true")
+  }
+}
 
 export default function AppPage() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false)
-  // Onboarding State
-  const [isOnboarding, setIsOnboarding] = useState(false);
-  // Theme State
+  const dispatch = useAppDispatch()
+  const { user: authUser, accessToken } = useAppSelector((state) => state.auth)
+  const postsState = useAppSelector((state) => state.posts)
+  const notificationsState = useAppSelector((state) => state.notifications)
+  const usersState = useAppSelector((state) => state.users)
+  const spacesState = useAppSelector((state) => state.spaces)
+
+  const [isOnboarding, setIsOnboarding] = useState(false)
+  const [isSavingOnboarding, setIsSavingOnboarding] = useState(false)
   const [theme, setTheme] = useState<"light" | "dark">("dark")
+
+  const [activeView, setActiveView] = useState<AppView>(AppView.FEED)
+  const [feedTab, setFeedTab] = useState<"foryou" | "following">("foryou")
+  const [interaction, setInteraction] = useState<{ post: Post; mode: "comment" | "askAi" | "context" } | null>(null)
+  const [isComposeOpen, setIsComposeOpen] = useState(false)
+  const [isDisplayModalOpen, setIsDisplayModalOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+
+  const [isSpaceCreationOpen, setIsSpaceCreationOpen] = useState(false)
+  const [isSpaceMinimized, setIsSpaceMinimized] = useState(false)
+
+  const isLoggedIn = Boolean(accessToken)
+  const currentUser: UserType = authUser || CURRENT_USER
+  const followingSet = useMemo(() => new Set(usersState.followingHandles), [usersState.followingHandles])
+  const baseForYouPosts = postsState.feeds.foryou.items
+  const personalizedForYouPosts = useMemo(() => {
+    const interests = authUser?.interests || []
+    if (!interests.length) return baseForYouPosts
+
+    const keywords = interests.map((interest) => interest.toLowerCase())
+    const matched: Post[] = []
+    const remaining: Post[] = []
+
+    baseForYouPosts.forEach((post) => {
+      const haystack = `${post.content} ${post.contextProfile.intent} ${post.contextProfile.assumptions} ${post.contextProfile.coreArgument}`.toLowerCase()
+      if (keywords.some((kw) => haystack.includes(kw))) {
+        matched.push(post)
+      } else {
+        remaining.push(post)
+      }
+    })
+
+    return [...matched, ...remaining]
+  }, [baseForYouPosts, authUser?.interests])
+
+  const feedPosts = feedTab === "foryou" ? personalizedForYouPosts : postsState.feeds.following.items
+  const explorePosts = searchQuery ? postsState.searchResults : personalizedForYouPosts
+  const notifications = notificationsState.items
+  const currentSpace = spacesState.currentSpace
 
   useEffect(() => {
     const saved = getStorageItem("discuzz-theme")
@@ -41,143 +125,268 @@ export default function AppPage() {
     setStorageItem("discuzz-theme", theme)
   }, [theme])
 
-  // App Data State
-  const [currentUser, setCurrentUser] = useState<UserType>(CURRENT_USER)
-  const [posts, setPosts] = useState<Post[]>(MOCK_POSTS)
-  const [notifications] = useState(MOCK_NOTIFICATIONS)
+  useEffect(() => {
+    dispatch(fetchFeed({ feed: "foryou" }))
+    dispatch(fetchSpaces())
+  }, [dispatch])
 
-  // Follow State
-  const [followingSet, setFollowingSet] = useState<Set<string>>(() => {
-    return new Set(MOCK_USERS.slice(0, 3).map((u) => u.handle))
-  })
+  useEffect(() => {
+    const storedTokens = loadStoredTokens()
+    if (storedTokens) {
+      dispatch(setTokens(storedTokens))
+    }
+  }, [dispatch])
 
-  // UI State
-  const [activeView, setActiveView] = useState<AppView>(AppView.FEED)
-  const [feedTab, setFeedTab] = useState<"foryou" | "following">("foryou")
-  const [interaction, setInteraction] = useState<{ post: Post; mode: "comment" | "askAi" | "context" } | null>(null)
-  const [isComposeOpen, setIsComposeOpen] = useState(false)
-  const [isDisplayModalOpen, setIsDisplayModalOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState("")
+  useEffect(() => {
+    if (
+      feedTab === "following" &&
+      postsState.feeds.following.items.length === 0 &&
+      !postsState.feeds.following.loading
+    ) {
+      dispatch(fetchFeed({ feed: "following" }))
+    }
+  }, [feedTab, postsState.feeds.following.items.length, postsState.feeds.following.loading, dispatch])
 
-    // --- Spaces State ---
-  const [isSpaceCreationOpen, setIsSpaceCreationOpen] = useState(false);
-  const [currentSpace, setCurrentSpace] = useState<Space | null>(null);
-  const [isSpaceMinimized, setIsSpaceMinimized] = useState(false);
+  useEffect(() => {
+    if (searchQuery.trim()) {
+      dispatch(searchPosts(searchQuery))
+    } else {
+      dispatch(clearSearch())
+    }
+  }, [searchQuery, dispatch])
 
-  const handleLogin = () => {
-    setIsLoggedIn(true)
-    // Start Onboarding after login
-    setIsOnboarding(true)
+  useEffect(() => {
+    if (accessToken && !authUser) {
+      dispatch(fetchCurrentUser())
+    }
+  }, [accessToken, authUser, dispatch])
+
+  useEffect(() => {
+    if (!isLoggedIn || !authUser) return
+    const needsOnboarding = !hasCompletedOnboarding(authUser)
+    setIsOnboarding(needsOnboarding)
+    if (!needsOnboarding) {
+      rememberOnboardingCompletion(authUser)
+    }
+  }, [authUser, isLoggedIn])
+
+  useEffect(() => {
+    if (authUser?.handle) {
+      dispatch(fetchFollowing(authUser.handle))
+      dispatch(fetchUserPosts(authUser.handle))
+      if (accessToken) {
+        dispatch(fetchNotifications())
+      }
+    }
+  }, [authUser?.handle, accessToken, dispatch])
+
+  useEffect(() => {
+    if (activeView === AppView.NOTIFICATIONS && isLoggedIn) {
+      dispatch(fetchNotifications())
+    }
+  }, [activeView, isLoggedIn, dispatch])
+
+  const handleLogin = async ({ email, password }: { email: string; password: string }) => {
+    try {
+      const result = await dispatch(login({ email, password })).unwrap()
+      const needsOnboarding = !hasCompletedOnboarding(result.user)
+      setIsOnboarding(needsOnboarding)
+      if (!needsOnboarding) {
+        rememberOnboardingCompletion(result.user)
+      }
+    } catch (e) {
+      console.error("Login failed", e)
+    }
   }
 
-  const handleOnboardingComplete = (updatedUser: UserType, initialFollowing: Set<string>) => {
-    setCurrentUser((prev) => ({
-      ...updatedUser,
-      stats: {
-        ...prev.stats!,
-        following: initialFollowing.size,
-      },
-    }))
-    
-    // Merge initial following set with new choices, or just set it
-    // For this flow, we'll respect the onboarding choices primarily
-    const mergedFollowing = new Set([...followingSet, ...initialFollowing])
-    setFollowingSet(mergedFollowing)
-    
-    setIsOnboarding(false)
-    window.scrollTo({ top: 0, behavior: "smooth" })
+  const handleSignup = async ({ email, password }: { email: string; password: string }) => {
+    try {
+      const result = await dispatch(signup({ email, password })).unwrap()
+      const needsOnboarding = !hasCompletedOnboarding(result.user)
+      setIsOnboarding(needsOnboarding)
+      if (!needsOnboarding) {
+        rememberOnboardingCompletion(result.user)
+      }
+    } catch (e) {
+      console.error("Signup failed", e)
+    }
   }
 
-  
-  const handlePublish = (newPost: Post) => {
-    setPosts([newPost, ...posts])
-    setIsComposeOpen(false)
-    setActiveView(AppView.FEED)
-    setFeedTab("foryou")
-    if (typeof window !== "undefined") {
+  const handleGoogleLogin = async (idToken: string) => {
+    try {
+      const result = await dispatch(loginWithGoogle({ idToken })).unwrap()
+      const needsOnboarding = !hasCompletedOnboarding(result.user)
+      setIsOnboarding(needsOnboarding)
+      if (!needsOnboarding) {
+        rememberOnboardingCompletion(result.user)
+      }
+    } catch (e) {
+      console.error("Google login failed", e)
+    }
+  }
+
+  const handleOnboardingComplete = async (payload: {
+    user: UserType
+    following: Set<string>
+    interests: string[]
+    languages: string[]
+  }) => {
+    if (!accessToken || isSavingOnboarding) return
+
+    setIsSavingOnboarding(true)
+    const primaryLanguage = payload.languages[0]
+
+    try {
+      await apiFetch("/users/me", {
+        method: "PATCH",
+        token: accessToken,
+        body: JSON.stringify({
+          name: payload.user.name,
+          bio: payload.user.bio,
+          location: payload.user.location,
+          avatar_url: payload.user.avatarUrl,
+          language: primaryLanguage,
+        }),
+      })
+
+      await apiFetch("/users/me/interests", {
+        method: "PUT",
+        token: accessToken,
+        body: JSON.stringify({
+          languages:
+            payload.languages.length > 0
+              ? payload.languages
+              : primaryLanguage
+                ? [primaryLanguage]
+                : [],
+          topics: payload.interests,
+        }),
+      })
+
+      await dispatch(fetchCurrentUser()).unwrap()
+      payload.following.forEach((handle) => dispatch(followUser(handle)))
+      rememberOnboardingCompletion(payload.user)
+      setIsOnboarding(false)
       window.scrollTo({ top: 0, behavior: "smooth" })
+    } catch (e) {
+      console.error("Onboarding save failed", e)
+    } finally {
+      setIsSavingOnboarding(false)
+    }
+  }
+
+  const handlePublish = async (payload: {
+    content: string
+    imageUrl?: string | null
+    contextProfile: ContextProfile
+    interviewHistory: Message[]
+  }) => {
+    try {
+      await dispatch(
+        createPost({
+          content: payload.content,
+          imageUrl: payload.imageUrl || undefined,
+          interviewHistory: payload.interviewHistory,
+          contextProfile: payload.contextProfile,
+        }),
+      ).unwrap()
+      setIsComposeOpen(false)
+      setActiveView(AppView.FEED)
+      setFeedTab("foryou")
+      if (typeof window !== "undefined") {
+        window.scrollTo({ top: 0, behavior: "smooth" })
+      }
+    } catch (e) {
+      console.error("Publish failed", e)
     }
   }
 
   const handleLike = (postId: string) => {
-    setPosts(
-      posts.map((post) => {
-        if (post.id === postId) {
-          const isLiked = !post.isLiked
-          return {
-            ...post,
-            isLiked,
-            likes: post.likes + (isLiked ? 1 : -1),
-          }
-        }
-        return post
-      }),
-    )
+    const post =
+      postsState.feeds.foryou.items.find((p) => p.id === postId) ||
+      postsState.feeds.following.items.find((p) => p.id === postId)
+    dispatch(toggleLike({ postId, isLiked: Boolean(post?.isLiked) }))
   }
 
-  const handleToggleFollow = (handle: string) => {
-    const newFollowing = new Set(followingSet)
-    let isFollowing = false
-
-    if (newFollowing.has(handle)) {
-      newFollowing.delete(handle)
-      isFollowing = false
-    } else {
-      newFollowing.add(handle)
-      isFollowing = true
+  const handleToggleFollow = async (handle: string) => {
+    const normalized = handle.startsWith("@") ? handle : `@${handle}`
+    const isFollowing = followingSet.has(normalized.toLowerCase())
+    try {
+      if (isFollowing) {
+        await dispatch(unfollowUser(normalized)).unwrap()
+        if (currentUser.stats) {
+          dispatch(
+            setUser({
+              ...currentUser,
+              stats: { ...currentUser.stats, following: Math.max(0, currentUser.stats.following - 1) },
+            }),
+          )
+        }
+      } else {
+        await dispatch(followUser(normalized)).unwrap()
+        if (currentUser.stats) {
+          dispatch(
+            setUser({
+              ...currentUser,
+              stats: { ...currentUser.stats, following: currentUser.stats.following + 1 },
+            }),
+          )
+        }
+      }
+    } catch (e) {
+      console.error("Follow action failed", e)
     }
-
-    setFollowingSet(newFollowing)
-
-    setCurrentUser((prev) => ({
-      ...prev,
-      stats: {
-        ...prev.stats!,
-        following: prev.stats!.following + (isFollowing ? 1 : -1),
-      },
-    }))
   }
 
   const handleUpdateProfile = (updatedUser: UserType) => {
-    setCurrentUser(updatedUser)
+    dispatch(setUser({ ...currentUser, ...updatedUser }))
   }
 
   const handleLogout = () => {
-    setIsLoggedIn(false)
+    dispatch(logoutAction())
     setActiveView(AppView.FEED)
+    setIsOnboarding(false)
   }
 
   const openInteraction = (post: Post, mode: "comment" | "askAi" | "context" = "comment") => {
     setInteraction({ post, mode })
   }
-  // --- Spaces Logic ---
+
   const handleStartSpace = (title: string, tags: string[]) => {
-      // Create Mock Participants
-      const participants: SpaceParticipant[] = [
-          { user: currentUser, role: 'host', isMuted: false, isSpeaking: true },
-          ...MOCK_USERS.slice(0, 2).map(u => ({ user: u, role: 'speaker', isMuted: true, isSpeaking: false } as SpaceParticipant)),
-          ...MOCK_USERS.slice(2).map(u => ({ user: u, role: 'listener', isMuted: true, isSpeaking: false } as SpaceParticipant))
-      ];
-
-      const newSpace: Space = {
-          id: Date.now().toString(),
-          title,
-          tags,
-          hostId: currentUser.handle,
-          participants,
-          isActive: true,
-          startedAt: Date.now()
-      };
-
-      setCurrentSpace(newSpace);
-      setIsSpaceCreationOpen(false);
-      setIsSpaceMinimized(false);
-  };
+    dispatch(createSpaceAction({ title, description: undefined, tags }))
+    setIsSpaceCreationOpen(false)
+    setIsSpaceMinimized(false)
+  }
 
   const handleEndSpace = () => {
-      setCurrentSpace(null);
-      setIsSpaceMinimized(false);
-  };
+    if (currentSpace) {
+      dispatch(endSpaceAction(currentSpace.id))
+    }
+    dispatch(setCurrentSpaceAction(null))
+    setIsSpaceMinimized(false)
+  }
+
+  const handleLeaveSpace = () => {
+    if (currentSpace) {
+      dispatch(leaveSpace(currentSpace.id))
+    }
+    dispatch(setCurrentSpaceAction(null))
+    setIsSpaceMinimized(false)
+  }
+
+  const normalizedHandle = (currentUser.handle || "").toLowerCase()
+  const profilePosts =
+    postsState.userPosts[currentUser.handle] ||
+    postsState.userPosts[normalizedHandle] ||
+    postsState.feeds.foryou.items.filter((p) => p.authorHandle.toLowerCase() === normalizedHandle)
+
+  const followUsersList = useMemo(
+    () =>
+      usersState.followingHandles
+        .map((handle) => usersState.profiles[handle] || usersState.profiles[handle.toLowerCase()])
+        .filter(Boolean) as UserType[],
+    [usersState.followingHandles, usersState.profiles],
+  )
 
   const renderContent = () => {
     switch (activeView) {
@@ -185,7 +394,7 @@ export default function AppPage() {
         return (
           <ProfileView
             user={currentUser}
-            posts={posts}
+            posts={profilePosts}
             onInteract={(p) => openInteraction(p, "comment")}
             onComment={(p) => openInteraction(p, "comment")}
             onAskAi={(p) => openInteraction(p, "askAi")}
@@ -195,6 +404,7 @@ export default function AppPage() {
             onUpdateProfile={handleUpdateProfile}
             followingSet={followingSet}
             onToggleFollow={handleToggleFollow}
+            followUsers={followUsersList}
           />
         )
       case AppView.NOTIFICATIONS:
@@ -202,7 +412,7 @@ export default function AppPage() {
       case AppView.EXPLORE:
         return (
           <ExploreView
-            posts={posts}
+            posts={explorePosts}
             onInteract={(p) => openInteraction(p, "comment")}
             onLike={handleLike}
             searchQuery={searchQuery}
@@ -217,8 +427,7 @@ export default function AppPage() {
           <FeedView
             currentUser={currentUser}
             feedTab={feedTab}
-            posts={posts}
-            followingSet={followingSet}
+            posts={feedPosts}
             onTabChange={setFeedTab}
             onInteract={(post) => openInteraction(post, "comment")}
             onComment={(post) => openInteraction(post, "comment")}
@@ -236,7 +445,7 @@ export default function AppPage() {
   if (!isLoggedIn) {
     return (
       <div className={theme}>
-        <LoginView onLogin={handleLogin} />
+        <LoginView onLogin={handleLogin} onSignup={handleSignup} onGoogleLogin={handleGoogleLogin} />
       </div>
     )
   }
@@ -246,7 +455,8 @@ export default function AppPage() {
         <div className={theme}>
            <OnboardingFlow 
               initialUser={currentUser} 
-              onComplete={handleOnboardingComplete} 
+              onComplete={handleOnboardingComplete}
+              isSaving={isSavingOnboarding}
            />
         </div>
       );
@@ -412,10 +622,7 @@ export default function AppPage() {
                 space={currentSpace} 
                 currentUser={currentUser} 
                 onMinimize={() => setIsSpaceMinimized(true)}
-                onLeave={() => {
-                    // Logic to remove user from participants
-                    handleEndSpace();
-                }}
+                onLeave={handleLeaveSpace}
                 onEnd={handleEndSpace}
             />
         )}

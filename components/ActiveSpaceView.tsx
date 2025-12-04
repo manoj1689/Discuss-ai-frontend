@@ -39,7 +39,7 @@ export const ActiveSpaceView: React.FC<ActiveSpaceViewProps> = ({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const isHost = space.hostId === currentUser.handle;
+  const isHost = space.host?.id ? space.host.id === currentUser.id : space.host?.handle === currentUser.handle;
 
   useEffect(() => {
       if (showComments && messagesEndRef.current) {

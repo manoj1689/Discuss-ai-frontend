@@ -1,6 +1,5 @@
 "use client"
 
-import { useMemo } from "react"
 import type React from "react"
 import { Button } from "./Button"
 import { PostCard } from "./PostCard"
@@ -10,7 +9,6 @@ interface FeedViewProps {
   currentUser: User
   feedTab: "foryou" | "following"
   posts: Post[]
-  followingSet: Set<string>
   onTabChange: (tab: "foryou" | "following") => void
   onInteract: (post: Post) => void
   onComment: (post: Post) => void
@@ -21,14 +19,10 @@ interface FeedViewProps {
   onExplore: () => void
   onOpenProfile: () => void
 }
-
-const normalizeHandle = (handle: string) => handle.replace(/^@/, "").toLowerCase()
-
 export const FeedView: React.FC<FeedViewProps> = ({
   currentUser,
   feedTab,
   posts,
-  followingSet,
   onTabChange,
   onInteract,
   onComment,
@@ -45,20 +39,6 @@ export const FeedView: React.FC<FeedViewProps> = ({
     onTabChange(tab)
     scrollToTop()
   }
-
-  const normalizedFollowingHandles = useMemo(() => {
-    const handles = new Set<string>()
-    followingSet.forEach((handle) => handles.add(normalizeHandle(handle)))
-    handles.add(normalizeHandle(currentUser.handle))
-    return handles
-  }, [followingSet, currentUser.handle])
-
-  const displayPosts = useMemo(() => {
-    if (feedTab === "foryou") {
-      return posts.filter((post) => !normalizedFollowingHandles.has(normalizeHandle(post.authorHandle)))
-    }
-    return posts.filter((post) => normalizedFollowingHandles.has(normalizeHandle(post.authorHandle)))
-  }, [feedTab, posts, normalizedFollowingHandles])
 
   return (
     <div>
@@ -133,8 +113,8 @@ export const FeedView: React.FC<FeedViewProps> = ({
 
       {/* Posts */}
       <div>
-        {displayPosts.length > 0 ? (
-          displayPosts.map((post) => (
+        {posts.length > 0 ? (
+          posts.map((post) => (
             <PostCard
               key={post.id}
               post={post}
@@ -161,7 +141,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
           </div>
         )}
 
-        {displayPosts.length > 0 && (
+        {posts.length > 0 && (
           <div className="p-8 text-center text-slate-500">
             <p>End of feed.</p>
           </div>

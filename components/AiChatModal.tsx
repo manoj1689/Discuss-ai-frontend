@@ -6,6 +6,7 @@ import { X, Bot, Send } from "lucide-react"
 import type { Message, Post } from "@/types"
 import { generateDelegateResponse } from "@/services/geminiService"
 import { Button } from "./Button"
+import { useAppSelector } from "@/store/hooks"
 
 interface AiChatModalProps {
   post: Post
@@ -17,6 +18,7 @@ export const AiChatModal: React.FC<AiChatModalProps> = ({ post, onClose }) => {
   const [input, setInput] = useState("")
   const [isTyping, setIsTyping] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const { accessToken } = useAppSelector((state) => state.auth)
 
   useEffect(() => {
     setMessages([
@@ -48,7 +50,13 @@ export const AiChatModal: React.FC<AiChatModalProps> = ({ post, onClose }) => {
     setIsTyping(true)
 
     try {
-      const reply = await generateDelegateResponse(post.content, post.contextProfile, userMsg.content, messages)
+      const reply = await generateDelegateResponse(
+        post.content,
+        post.contextProfile,
+        userMsg.content,
+        messages,
+        accessToken,
+      )
       const aiMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: "model",

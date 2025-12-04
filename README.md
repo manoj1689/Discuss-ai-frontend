@@ -66,6 +66,11 @@ discuzz.ai/
 
 - `API_KEY` - Google Gemini API key (required for AI features)
 - `NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL` - Optional auth redirect URL
+- `NEXT_PUBLIC_FIREBASE_API_KEY` - Firebase web API key (Google sign-in)
+- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` - Firebase auth domain
+- `NEXT_PUBLIC_FIREBASE_PROJECT_ID` - Firebase project ID
+- `NEXT_PUBLIC_FIREBASE_APP_ID` - Firebase app ID
+- `NEXT_PUBLIC_GOOGLE_CLIENT_ID` - Optional Google OAuth client ID (for backend verification fallback)
 
 ## Building for Production
 

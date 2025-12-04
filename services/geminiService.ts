@@ -1,26 +1,14 @@
 import type { ContextProfile, Message } from "../types"
-
-// Function to get AI client (not used in the updated code)
-const getAiClient = () => {
-  const apiKey = process.env.API_KEY
-  if (!apiKey) {
-    throw new Error("API_KEY is missing from environment variables")
-  }
-  // Placeholder for AI client initialization
-  return {}
-}
+import { apiFetch } from "@/lib/api"
 
 // 1. Interview Phase: Generate questions based on the draft
-export const generateInterviewQuestions = async (draft: string): Promise<string[]> => {
+export const generateInterviewQuestions = async (draft: string, token?: string): Promise<string[]> => {
   try {
-    const response = await fetch("/api/interview", {
+    const data = await apiFetch<{ questions: string[] }>("/ai/interview", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      token,
       body: JSON.stringify({ draft }),
     })
-
-    if (!response.ok) throw new Error("Failed to generate questions")
-    const data = await response.json()
     return data.questions
   } catch (error) {
     console.error("Error generating interview questions:", error)
@@ -33,16 +21,17 @@ export const generateInterviewQuestions = async (draft: string): Promise<string[
 }
 
 // 2. Synthesis Phase: Create Context Profile from draft + interview
-export const generateContextProfile = async (draft: string, interviewHistory: Message[]): Promise<ContextProfile> => {
+export const generateContextProfile = async (
+  draft: string,
+  interviewHistory: Message[],
+  token?: string,
+): Promise<ContextProfile> => {
   try {
-    const response = await fetch("/api/context-profile", {
+    const data = await apiFetch<{ profile: ContextProfile }>("/ai/context-profile", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ draft, interviewHistory }),
+      token,
+      body: JSON.stringify({ draft, interview_history: interviewHistory }),
     })
-
-    if (!response.ok) throw new Error("Failed to generate profile")
-    const data = await response.json()
     return data.profile
   } catch (error) {
     console.error("Error creating context profile:", error)
@@ -62,16 +51,14 @@ export const generateDelegateResponse = async (
   profile: ContextProfile,
   userQuery: string,
   chatHistory: Message[],
+  token?: string,
 ): Promise<string> => {
   try {
-    const response = await fetch("/api/delegate", {
+    const data = await apiFetch<{ response: string }>("/ai/delegate", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ originalPost, profile, userQuery, chatHistory }),
+      token,
+      body: JSON.stringify({ original_post: originalPost, profile, user_query: userQuery, chat_history: chatHistory }),
     })
-
-    if (!response.ok) throw new Error("Failed to generate response")
-    const data = await response.json()
     return data.response
   } catch (error) {
     console.error("Error generating delegate response:", error)

@@ -6,7 +6,8 @@ import type { Post, Message, Comment } from "@/types"
 import { X, Send, Bot, UserIcon, Info, MessageSquare } from "lucide-react"
 import { generateDelegateResponse } from "@/services/geminiService"
 import { Button } from "./Button"
-import { MOCK_COMMENTS, CURRENT_USER } from "@/constants"
+import { useAppDispatch, useAppSelector } from "@/store/hooks"
+import { addComment, fetchComments } from "@/store/commentsSlice"
 
 interface InteractionModalProps {
   post: Post | null
@@ -16,6 +17,10 @@ interface InteractionModalProps {
 }
 
 export const InteractionModal: React.FC<InteractionModalProps> = ({ post, onClose, initialTab, showContextDefault }) => {
+  const dispatch = useAppDispatch()
+  const { user, accessToken } = useAppSelector((state) => state.auth)
+  const commentsState = useAppSelector((state) => (post ? state.comments.byPostId[post.id] : undefined))
+  const comments = commentsState?.items || []
   const [activeTab, setActiveTab] = useState<"discuss" | "chat">(initialTab || "discuss")
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
@@ -24,8 +29,6 @@ export const InteractionModal: React.FC<InteractionModalProps> = ({ post, onClos
   const commentsEndRef = useRef<HTMLDivElement>(null)
   const [showContext, setShowContext] = useState(!!showContextDefault)
 
-  // Public Discussion State
-  const [comments, setComments] = useState<Comment[]>(MOCK_COMMENTS)
   const [publicInput, setPublicInput] = useState("")
 
   useEffect(() => {
@@ -41,8 +44,9 @@ export const InteractionModal: React.FC<InteractionModalProps> = ({ post, onClos
       // Reset based on trigger intent
       setActiveTab(initialTab || "discuss")
       setShowContext(!!showContextDefault)
+      dispatch(fetchComments(post.id))
     }
-  }, [post, initialTab, showContextDefault])
+  }, [post, initialTab, showContextDefault, dispatch])
 
   useEffect(() => {
     if (activeTab === "chat" && scrollRef.current) {
@@ -67,7 +71,13 @@ export const InteractionModal: React.FC<InteractionModalProps> = ({ post, onClos
     setIsTyping(true)
 
     try {
-      const responseText = await generateDelegateResponse(post.content, post.contextProfile, userMsg.content, messages)
+      const responseText = await generateDelegateResponse(
+        post.content,
+        post.contextProfile,
+        userMsg.content,
+        messages,
+        accessToken,
+      )
 
       const aiMsg: Message = {
         id: (Date.now() + 1).toString(),
@@ -85,46 +95,16 @@ export const InteractionModal: React.FC<InteractionModalProps> = ({ post, onClos
   }
 
   const handlePostComment = async () => {
-    if (!publicInput.trim() || !post) return
+    if (!publicInput.trim() || !post || !user) return
 
-    const newComment: Comment = {
-      id: Date.now().toString(),
-      author: CURRENT_USER,
-      content: publicInput,
-      timestamp: Date.now(),
-    }
-
-    setComments((prev) => [...prev, newComment])
+    setIsTyping(true)
+    const content = publicInput
     setPublicInput("")
-    setIsTyping(true) // Re-use typing state for UI feedback
-
-    // Trigger AI Response to the public comment
     try {
-      const responseText = await generateDelegateResponse(
-        post.content,
-        post.contextProfile,
-        newComment.content,
-        [], // No private history for public comments usually, or maybe context of thread
-      )
-
-      setTimeout(() => {
-        const aiReply: Comment = {
-          id: (Date.now() + 1).toString(),
-          author: {
-            name: `${post.authorName} (AI Delegate)`,
-            handle: post.authorHandle,
-            avatarUrl: post.avatarUrl,
-          },
-          content: responseText,
-          timestamp: Date.now(),
-          isAiResponse: true,
-          replyToId: newComment.id,
-        }
-        setComments((prev) => [...prev, aiReply])
-        setIsTyping(false)
-      }, 1500) // Artificial delay to feel like "reading"
+      await dispatch(addComment({ postId: post.id, content })).unwrap()
     } catch (e) {
       console.error(e)
+    } finally {
       setIsTyping(false)
     }
   }
@@ -288,7 +268,7 @@ export const InteractionModal: React.FC<InteractionModalProps> = ({ post, onClos
 
               <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
                 <div className="flex items-center gap-2">
-                  <img src={CURRENT_USER.avatarUrl || "/placeholder.svg"} className="w-8 h-8 rounded-full" />
+                  <img src={user?.avatarUrl || "/placeholder.svg"} className="w-8 h-8 rounded-full" />
                   <input
                     type="text"
                     value={publicInput}
